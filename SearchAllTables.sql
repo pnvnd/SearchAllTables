@@ -1,11 +1,14 @@
 -- Remove CREATE PROC to run search on demand
 -- CREATE PROC SearchAllTables
 
--- Replace 'string' with whatever you text you need to search for
-DECLARE @searchStr nvarchar(100) = 'conduit'
+-- Replace 'value' with whatever 'text' or number (no single quotes)
+DECLARE @searchStr varchar(100) = 'value'
 
--- Use 1 to find exact matches
+-- Use 1 to find exact matches (only used for text, otherwise value doesn't matter)
 DECLARE @exactMatch int = 0
+
+-- Choose dataType options from str, int, dec, or num.  If searching numerical values, ignore error messages and go to Results tab
+DECLARE @dataType varchar(16) = 'str'
 
 -- AS
 -- BEGIN
@@ -23,68 +26,113 @@ DECLARE @exactMatch int = 0
 -- Create a temporary table to select records out of when query complete
 CREATE TABLE #Results
 	(
-		tableName nvarchar(256),
-		columnName nvarchar(370),
-		columnValue nvarchar(3630),
-		searchStr nvarchar(110)
+		tableName nvarchar(64),
+		columnName nvarchar(64),
+		columnValue nvarchar(4000),
+		searchStr nvarchar(64)
 	)
 
+-- Speed up query, remove this or SET NOCOUNT OFF to make query slower
 SET NOCOUNT ON;
 
 DECLARE
 	@tableName nvarchar(256),
 	@columnName nvarchar(128)
 
--- Find text containing searchStr, or exact match false
-IF @exactMatch = 0
+-- Text data type logic
+IF @dataType = 'str'
 
 BEGIN
-	DECLARE search CURSOR
-	FOR
-	-- Select columns in base tables where the data type is some kind of text
-		SELECT tbl.TABLE_NAME, col.COLUMN_NAME
-		FROM INFORMATION_SCHEMA.COLUMNS col
-			INNER JOIN INFORMATION_SCHEMA.TABLES tbl
-				ON col.TABLE_NAME = tbl.TABLE_NAME
-		WHERE DATA_TYPE IN ('char', 'varchar', 'nchar', 'nvarchar')
-			AND col.COLUMN_NAME <> 'DEX_ROW_ID'
-			AND tbl.TABLE_TYPE = 'BASE TABLE'
-		ORDER BY tbl.TABLE_NAME, col.COLUMN_NAME
+	-- Find text containing searchStr, or exact match false
+	IF @exactMatch = 0
 
-	OPEN search
-		FETCH NEXT FROM Search INTO @tableName, @columnName
+	BEGIN
+		DECLARE search CURSOR
+		FOR
+		-- Select columns in base tables where the data type is some kind of text
+			SELECT tbl.TABLE_NAME, col.COLUMN_NAME
+			FROM INFORMATION_SCHEMA.COLUMNS col
+				INNER JOIN INFORMATION_SCHEMA.TABLES tbl
+					ON col.TABLE_NAME = tbl.TABLE_NAME
+			WHERE DATA_TYPE IN ('char', 'varchar', 'nchar', 'nvarchar')
+				AND col.COLUMN_NAME <> 'DEX_ROW_ID'
+				AND tbl.TABLE_TYPE = 'BASE TABLE'
+			ORDER BY tbl.TABLE_NAME, col.COLUMN_NAME
 
-		WHILE @@FETCH_STATUS = 0
+		OPEN search
+			FETCH NEXT FROM Search INTO @tableName, @columnName
 
-			BEGIN
+			WHILE @@FETCH_STATUS = 0
 
-				DECLARE @sqlStmtStr1 varchar(1024)
-				SET @sqlStmtStr1 = 'SELECT ''' + @tableName + ''', ''' + @columnName + ''', LEFT(' + @columnName + ', 3072), ''''  
-									FROM ' + @tableName + ' (NOLOCK) ' + ' WHERE ' + @columnName + ' LIKE ' + '''%' +  @searchStr  + '%'''
+				BEGIN
+
+					DECLARE @sqlStmtStr1 varchar(1024)
+					SET @sqlStmtStr1 = 'SELECT ''' + @tableName + ''', ''' + @columnName + ''', LEFT(' + @columnName + ', 3072), ''''  
+										FROM ' + @tableName + ' WHERE ' + @columnName + ' LIKE ' + '''%' +  @searchStr  + '%'''
 		
-				IF @columnName IS NOT NULL
-						BEGIN
-							INSERT INTO #results EXEC (@sqlStmtStr1)
-						END
+					IF @columnName IS NOT NULL
+							BEGIN
+								INSERT INTO #results EXEC (@sqlStmtStr1)
+							END
 				
-		FETCH NEXT FROM Search INTO @tableName, @columnName
-		END
-	CLOSE search
-	DEALLOCATE search
+			FETCH NEXT FROM Search INTO @tableName, @columnName
+			END
+		CLOSE search
+		DEALLOCATE search
+	END
+
+	-- Find exact match for searchStr, exact match not false, query is faster if you know exactly what to look for
+	ELSE IF @exactMatch <> 0
+
+	BEGIN
+		DECLARE search CURSOR
+		FOR
+		-- Select columns in base tables where the data type is some kind of text
+			SELECT tbl.TABLE_NAME, col.COLUMN_NAME
+			FROM INFORMATION_SCHEMA.COLUMNS col
+				INNER JOIN INFORMATION_SCHEMA.TABLES tbl
+					ON col.TABLE_NAME = tbl.TABLE_NAME
+			WHERE DATA_TYPE IN ('char', 'varchar', 'nchar', 'nvarchar')
+				AND col.COLUMN_NAME <> 'DEX_ROW_ID'
+				AND tbl.TABLE_TYPE = 'BASE TABLE'
+			ORDER BY tbl.TABLE_NAME, col.COLUMN_NAME
+
+		OPEN search
+			FETCH NEXT FROM Search INTO @tableName, @columnName
+
+			WHILE @@FETCH_STATUS = 0
+
+				BEGIN
+
+					DECLARE @sqlStmtStr2 varchar(1024)
+					SET @sqlStmtStr2 = 'SELECT ''' + @tableName + ''', ''' + @columnName + ''', LEFT(' + @columnName + ', 3072), ''''  
+										FROM ' + @tableName + ' (NOLOCK) ' + ' WHERE ' + @columnName + ' = ' + '''' +  @searchStr  + ''''
+		
+					IF @columnName IS NOT NULL
+							BEGIN
+								INSERT INTO #results EXEC (@sqlStmtStr2)
+							END
+				
+			FETCH NEXT FROM search INTO @tableName, @columnName
+			END
+		CLOSE search
+		DEALLOCATE search
+	END
 END
 
--- Find exact match for searchStr, exact match not false, query is faster if you know exactly what to look for
-ELSE IF @exactMatch <> 0
+-- Numerical data type logic
+ELSE IF @dataType = 'int' OR @dataType = 'dec' OR @dataType = 'num'
 
+-- This will match a number exactly
 BEGIN
 	DECLARE search CURSOR
 	FOR
-	-- Select columns in base tables where the data type is some kind of text
+	-- Select columns in base tables where the data type is some kind of number
 		SELECT tbl.TABLE_NAME, col.COLUMN_NAME
 		FROM INFORMATION_SCHEMA.COLUMNS col
 			INNER JOIN INFORMATION_SCHEMA.TABLES tbl
 				ON col.TABLE_NAME = tbl.TABLE_NAME
-		WHERE DATA_TYPE IN ('char', 'varchar', 'nchar', 'nvarchar')
+		WHERE DATA_TYPE IN ('int', 'decimal', 'numeric')
 			AND col.COLUMN_NAME <> 'DEX_ROW_ID'
 			AND tbl.TABLE_TYPE = 'BASE TABLE'
 		ORDER BY tbl.TABLE_NAME, col.COLUMN_NAME
@@ -95,17 +143,17 @@ BEGIN
 		WHILE @@FETCH_STATUS = 0
 
 			BEGIN
-
-				DECLARE @sqlStmtStr2 varchar(1024)
-				SET @sqlStmtStr2 = 'SELECT ''' + @tableName + ''', ''' + @columnName + ''', LEFT(' + @columnName + ', 3072), ''''  
-									FROM ' + @tableName + ' (NOLOCK) ' + ' WHERE ' + @columnName + ' = ' + '''' +  @searchStr  + ''''
+			-- This is buggy, not sure where error message is coming from for SQL 2014+
+				DECLARE @sqlStmtStr3 nvarchar(2048)
+				SET @sqlStmtStr3 = 'SELECT ''' + @tableName + ''', ''' + @columnName + ''', LEFT(' + @columnName + ', 3072), ''@sqlStmtStr3''  
+									FROM ' + @tableName + ' (NOLOCK) ' + ' WHERE ' + @columnName + ' = ' + '' +  @searchStr  + ''
 		
 				IF @columnName IS NOT NULL
 						BEGIN
-							INSERT INTO #results EXEC (@sqlStmtStr2)
+							INSERT INTO #results EXEC (@sqlStmtStr3)
 						END
 				
-		FETCH NEXT FROM Search INTO @tableName, @columnName
+		FETCH NEXT FROM search INTO @tableName, @columnName
 		END
 	CLOSE search
 	DEALLOCATE search
