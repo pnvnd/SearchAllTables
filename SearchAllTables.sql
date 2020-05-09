@@ -4,6 +4,9 @@
 -- Replace 'string' with whatever you text you need to search for
 DECLARE @searchStr nvarchar(100) = 'conduit'
 
+-- Use 1 to find exact matches
+DECLARE @exactMatch int = 0
+
 -- AS
 -- BEGIN
 
@@ -32,6 +35,9 @@ DECLARE
 	@tableName nvarchar(256),
 	@columnName nvarchar(128)
 
+-- Find text containing searchStr, or exact match false
+IF @exactMatch = 0
+
 BEGIN
 	DECLARE search CURSOR
 	FOR
@@ -59,6 +65,44 @@ BEGIN
 				IF @columnName IS NOT NULL
 						BEGIN
 							INSERT INTO #results EXEC (@sqlStmtStr1)
+						END
+				
+		FETCH NEXT FROM Search INTO @tableName, @columnName
+		END
+	CLOSE search
+	DEALLOCATE search
+END
+
+-- Find exact match for searchStr, exact match not false, query is faster if you know exactly what to look for
+ELSE IF @exactMatch <> 0
+
+BEGIN
+	DECLARE search CURSOR
+	FOR
+	-- Select columns in base tables where the data type is some kind of text
+		SELECT tbl.TABLE_NAME, col.COLUMN_NAME
+		FROM INFORMATION_SCHEMA.COLUMNS col
+			INNER JOIN INFORMATION_SCHEMA.TABLES tbl
+				ON col.TABLE_NAME = tbl.TABLE_NAME
+		WHERE DATA_TYPE IN ('char', 'varchar', 'nchar', 'nvarchar')
+			AND col.COLUMN_NAME <> 'DEX_ROW_ID'
+			AND tbl.TABLE_TYPE = 'BASE TABLE'
+		ORDER BY tbl.TABLE_NAME, col.COLUMN_NAME
+
+	OPEN search
+		FETCH NEXT FROM Search INTO @tableName, @columnName
+
+		WHILE @@FETCH_STATUS = 0
+
+			BEGIN
+
+				DECLARE @sqlStmtStr2 varchar(1024)
+				SET @sqlStmtStr2 = 'SELECT ''' + @tableName + ''', ''' + @columnName + ''', LEFT(' + @columnName + ', 3072), ''''  
+									FROM ' + @tableName + ' (NOLOCK) ' + ' WHERE ' + @columnName + ' = ' + '''' +  @searchStr  + ''''
+		
+				IF @columnName IS NOT NULL
+						BEGIN
+							INSERT INTO #results EXEC (@sqlStmtStr2)
 						END
 				
 		FETCH NEXT FROM Search INTO @tableName, @columnName
