@@ -1,9 +1,14 @@
-CREATE PROC SearchAllTables
-(
-	@SearchStr nvarchar(100)
-)
-AS
-BEGIN
+-- Remove CREATE PROC to run search on demand
+-- CREATE PROC SearchAllTables
+
+-- Replace 'string' with whatever you text you need to search for
+	DECLARE @SearchStr nvarchar(100) = 'string'
+
+-- AS
+-- BEGIN
+
+    -- Modified by: Peter Nguyen https://github.com/pnvnd/SearchAllTables
+	-- Tested with SQL Server: 2008, 2008 R2, 2012, 2014, 2017
 
 	-- Copyright © 2002 Narayana Vyas Kondreddi. All rights reserved.
 	-- Purpose: To search all columns of all tables for a given search string
@@ -11,7 +16,6 @@ BEGIN
 	-- Site: http://vyaskn.tripod.com
 	-- Tested on: SQL Server 7.0 and SQL Server 2000
 	-- Date modified: 28th July 2002 22:50 GMT
-
 
 	CREATE TABLE #Results (ColumnName nvarchar(370), ColumnValue nvarchar(3630))
 
@@ -63,4 +67,9 @@ BEGIN
 	END
 
 	SELECT ColumnName, ColumnValue FROM #Results
-END
+
+	-- Drop table so you can run search on demand again
+	DROP TABLE #Results
+
+-- Comment out last END since we don't want a stored procedure
+-- END
